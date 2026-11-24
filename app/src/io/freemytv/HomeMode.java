@@ -51,7 +51,7 @@ final class HomeMode {
     static final String[] DEBLOAT = {
         "com.google.android.play.games", "com.google.android.youtube.tvmusic",        // Play Games, YouTube Music
         // TCL
-        "com.tcl.magiconnectfree", "com.tcl.miracast",                                // screen mirroring apps
+        "com.tcl.magiconnectfree",                                                    // phone mirroring app
         "com.tcl.waterfall.overseas", "com.tcl.channelplus",                          // TCL Channel and its Live TV
         "com.tcl.messagebox", "com.tcl.usercenter",                                   // TCL messages and account
         "com.tcl.exhibit", "com.tcl.esticker", "com.tcl.hotelmenu",                   // store demo, hotel menu
@@ -66,7 +66,7 @@ final class HomeMode {
         "com.tcl.ttvs", "com.tvos", "com.tcl.systemserver", "com.tcl.systemui.plugin", "com.tcl.tv", "com.tcl.tvinput",
         "com.tcl.hearaid", "com.dolby.android.audio.service", "com.tcl.globalkeyoverlay", "com.tcl.autopair",
         "com.tcl.UpdatePeripheral", "com.tcl.dashboard", "com.tcl.suspension", "com.tcl.providers.config",
-        "com.tcl.gamebar", "com.tcl.airplay2", "com.mirakulo.astrotv.service", "com.tcl.initsetup",
+        "com.tcl.gamebar", "com.tcl.airplay2", "com.tcl.miracast", /* Win+K */"com.mirakulo.astrotv.service", "com.tcl.initsetup",
         "com.tcl.useragreement", "com.tcl.factory.view", "com.tcl.guard", "com.tcl.t_solo",
         "com.google.android.gms", "com.google.android.gsf", "com.android.vending", "com.google.android.apps.mediashell",
         "com.google.android.tv.remote.service", "com.google.android.inputmethod.latin", "com.google.android.webview",
@@ -112,10 +112,14 @@ final class HomeMode {
             // The TV's own home screen and screensaver, recorded once (before ours replace them) so "original" restores
             // exactly what was there, on any brand.
             String home = s.optString("originalHome", "");
-            if (home.isEmpty() || home.startsWith(PKG + "/")) {
+            if (home.isEmpty() || home.startsWith(PKG + "/") || !realHome(home)) {
                 String found = currentHome(adb);
+                if (found != null && !realHome(found)) found = null;
+                // No HOME role holder (TCL): Google TV wins by priority alone, so it's the one to turn off.
+                if (found == null && adb.shell("pm path " + packageOf(GOOGLE_HOME)).contains("package:")) found = GOOGLE_HOME;
                 home = found != null ? found : "";
             }
+            AppLog.w("original home: " + (home.isEmpty() ? "unknown" : home));
             String dream = s.optString("originalDream", "");
             if (dream.isEmpty()) dream = defaultDream(adb);
             JSONObject latest = state(c);
@@ -130,6 +134,11 @@ final class HomeMode {
             check(adb.shell("cmd package set-home-activity " + HOME_ACTIVITY), "Success",
                     Ui.tr("o Android não aceitou o novo Início", "Android didn't accept the new home screen"));
             adb.shell("settings put secure screensaver_components " + DREAM);
+            // apps_only shows the Wi-Fi network's name, which Android only gives to apps with location.
+            if (Config.APPS_ONLY) {
+                adb.shell("pm grant " + PKG + " android.permission.ACCESS_COARSE_LOCATION");
+                adb.shell("pm grant " + PKG + " android.permission.ACCESS_FINE_LOCATION");
+            }
             List<String> targets = targets(home, dream);
             Set<String> disabled = new HashSet<>(stringList(state(c), "disabled"));
             Set<String> present = packages(adb, "");
@@ -325,6 +334,15 @@ final class HomeMode {
             if (line.startsWith(holder + "/")) return line;
         }
         return null;
+    }
+
+    /**
+     * Not a stand-in: a protected one (Settings' FallbackHome, TCL's factory menu) is never turned off, and Google TV's
+     * RecoveryActivity can hold the HOME role on TCL while Google TV is what actually shows.
+     */
+    private static boolean realHome(String home) {
+        String pkg = packageOf(home);
+        return !PROTECTED.contains(pkg) && !GOOGLE_SETUP.equals(pkg);
     }
 
     /** The system's default screensaver ("package/service"), or "". */

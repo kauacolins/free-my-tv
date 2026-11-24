@@ -49,6 +49,39 @@ final class Backdrop {
         nightImage = night == null ? null : Bitmap.createBitmap(night, FW, FH, Bitmap.Config.ARGB_8888);
     }
 
+    Bitmap photo;                       // your own photo (apps_only), sharp, day and night alike
+
+    /** Your own photo: the glass reads it slightly darkened, the same by day and at night. */
+    private Backdrop(int[] frost, int[] glass) {
+        this(null, frost, glass, null, null, null, glass, null, glass);
+    }
+
+    /**
+     * One of your photos from backgrounds/: cropped to 16:9, with soft scrims behind the time (top left) and the
+     * shelf (bottom) so they stay readable on any photo.
+     */
+    static Backdrop wallpaper(Bitmap src) {
+        Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        float scale = Math.max((float) W / src.getWidth(), (float) H / src.getHeight());
+        float sw = src.getWidth() * scale, sh = src.getHeight() * scale;
+        c.drawBitmap(src, null, new RectF((W - sw) / 2, (H - sh) / 2, (W + sw) / 2, (H + sh) / 2),
+                new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG));
+        src.recycle();
+        Paint scrim = new Paint(Paint.DITHER_FLAG);
+        scrim.setShader(new android.graphics.RadialGradient(W * 0.12f, H * 0.15f, W * 0.45f,
+                new int[] {black(0.5f), black(0.24f), 0}, new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, W, H, scrim);
+        scrim.setShader(new LinearGradient(0, H, 0, H * 0.5f, new int[] {black(0.55f), black(0.24f), 0},
+                new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, H * 0.5f, W, H, scrim);
+        int[] frost = darken(reduce(out, FW, FH, 3, 3), 0.35f);
+        int[] glass = darken(reduce(out, GW, GH, 2, 2), 0.3f);
+        Backdrop b = new Backdrop(frost, glass);
+        b.photo = gpu(out);
+        return b;
+    }
+
     static Backdrop make(Bitmap src, boolean forLight) {
         Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(out);

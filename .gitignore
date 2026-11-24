@@ -2,6 +2,8 @@
 config.properties
 *.keystore
 *.idsig
+# Your own home screen photos
+backgrounds/
 
 # Build output
 out/

@@ -142,6 +142,22 @@ final class Ui {
                 : new SimpleDateFormat("EEEE, d 'de' MMMM", PT).format(new Date(now));
     }
 
+    /** "SEGUNDA-FEIRA 19 OUTUBRO"; "MONDAY OCTOBER 19" in English. */
+    static String dateCaps(long now) {
+        return (en ? new SimpleDateFormat("EEEE MMMM d", Locale.US).format(new Date(now))
+                : new SimpleDateFormat("EEEE d MMMM", PT).format(new Date(now))).toUpperCase(en ? Locale.US : PT);
+    }
+
+    /** "BOM DIA", "BOA TARDE" or "BOA NOITE" for the time of day. */
+    static String greeting(long now) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTimeInMillis(now);
+        int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+        if (hour >= 5 && hour < 12) return tr("BOM DIA", "GOOD MORNING");
+        if (hour >= 12 && hour < 18) return tr("BOA TARDE", "GOOD AFTERNOON");
+        return tr("BOA NOITE", "GOOD EVENING");
+    }
+
     /** Spinning arc (work in progress). */
     static void spinner(Canvas c, float cx, float cy, float r, float seconds, Paint stroke) {
         OVAL.set(cx - r, cy - r, cx + r, cy + r);

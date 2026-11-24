@@ -64,6 +64,7 @@ final class HomeApps {
         int kind;
         String key, label, pkg, inputId, number;
         String symbol;      // icon for the shortcuts and special cards
+        String action;      // ANDROID_SETTINGS: the settings screen to open (null = the main one)
         Bitmap tile;        // 16:9 card (apps and specials)
         Bitmap logo;        // colored logo with no background (shelf); null = use the card
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
@@ -92,6 +93,8 @@ final class HomeApps {
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
     private static final int MAX_SHELF = 8;
+    /** Google Play, for installing new apps (on the shelf with apps_only). */
+    private static final String STORE = "com.android.vending";
     /** Live TV apps of some brands (the antenna's channels open through the standard Android request first). */
     static final String[] LIVE_TV_APPS = {"com.tcl.tv", "com.google.android.tv", "com.mediatek.wwtv.tvcenter", "com.sony.dtv.tvx"};
     /** Kept out of "All Apps" (only hidden, still installed). Add the ones your TV shows that you never use. */
@@ -115,7 +118,7 @@ final class HomeApps {
         List<Item> items = new ArrayList<>();
         PackageManager pm = c.getPackageManager();
         for (String[] d : SHELF) {
-            if (items.size() >= MAX_SHELF) break;
+            if (!Config.APPS_ONLY && items.size() >= MAX_SHELF) break;   // apps_only scrolls: no limit
             if (launchIntent(pm, d[2]) == null) continue;
             Item it = new Item();
             it.kind = APP;
@@ -126,8 +129,19 @@ final class HomeApps {
             it.logo = shelfLogo(c, d[0], d[2], d[4], extract);
             if (it.logo != null) it.logoInk = ink(it.logo);
             it.logoDark = ownLogoCached(c, d[0] + "-dark");
+            if (it.logoDark == null && "youtube".equals(d[0]) && it.logo != null) it.logoDark = darkLetters(it.logo);
             it.logoScale = Float.parseFloat(d[5]);
             items.add(it);
+        }
+        if (Config.APPS_ONLY) {
+            // Like Samsung's row: getting new apps and All Apps at the end, one press away.
+            if (launchIntent(pm, STORE) != null) {
+                Item store = app(STORE, Ui.tr("Baixar apps", "Get Apps"));
+                store.key = "store";
+                store.tile = appTile(c, null, STORE, 0);
+                items.add(store);
+            }
+            items.add(special(c, ALL_APPS, "all", Ui.tr("Todos os apps", "All Apps"), "apps"));
         }
         return items;
     }
@@ -168,6 +182,23 @@ final class HomeApps {
         items.add(shortcut(ALL_APPS, "all", Ui.tr("Todos os Apps", "All Apps"), "apps"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Ajustes do Início", "Home Settings"), "settings"));
         items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("Ajustes da TV", "TV Settings"), "tv_settings"));
+        return items;
+    }
+
+    /**
+     * apps_only: the Settings section. Only screens that open directly on Android TV (sound and Bluetooth ask which
+     * app to use, so they're left out).
+     */
+    static List<Item> settingsRow() {
+        List<Item> items = new ArrayList<>();
+        items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("Ajustes da TV", "TV Settings"), "settings"));
+        Item picture = shortcut(ANDROID_SETTINGS, "picture", Ui.tr("Imagem", "Picture"), "tv_settings");
+        picture.action = Settings.ACTION_DISPLAY_SETTINGS;
+        items.add(picture);
+        Item network = shortcut(ANDROID_SETTINGS, "network", Ui.tr("Rede e Wi-Fi", "Network & Wi-Fi"), "wifi");
+        network.action = Settings.ACTION_WIFI_SETTINGS;
+        items.add(network);
+        items.add(shortcut(SETTINGS, "settings", Ui.tr("Ajustes do Início", "Home Settings"), "sparkles"));
         return items;
     }
 
@@ -291,7 +322,7 @@ final class HomeApps {
                 intent = new Intent().setComponent(new ComponentName(a, SettingsActivity.class));
                 break;
             case ANDROID_SETTINGS:
-                intent = new Intent(Settings.ACTION_SETTINGS);
+                intent = new Intent(it.action != null ? it.action : Settings.ACTION_SETTINGS);
                 break;
             default:
                 return false;
@@ -739,6 +770,39 @@ final class HomeApps {
 
     /** Official logo (tools/logos.py): trims the transparent margins and scales it down to at most 512 px. */
     /** The bundled logo, read once per process: reading it again on every load made a new image and filled caches. */
+    /**
+     * YouTube's logo for a white card, from the one lifted from its TV art: the white letters (right of the red button)
+     * turn near-black, like the official logo on light backgrounds; the play triangle inside the button stays white.
+     */
+    private static Bitmap darkLetters(Bitmap logo) {
+        synchronized (LOGOS) {
+            if (LOGOS.containsKey("dark-letters")) return LOGOS.get("dark-letters");
+        }
+        int w = logo.getWidth(), h = logo.getHeight();
+        int[] px = new int[w * h];
+        logo.getPixels(px, 0, w, 0, 0, w, h);
+        int redRight = -1;
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i], r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+            if ((p >>> 24) > 128 && r > 150 && g < 90 && b < 90) redRight = Math.max(redRight, i % w);
+        }
+        Bitmap out = null;
+        if (redRight >= 0) {
+            for (int i = 0; i < px.length; i++) {
+                int p = px[i], a = p >>> 24;
+                if (a == 0 || i % w <= redRight) continue;
+                int r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+                if (r > 170 && g > 170 && b > 170) px[i] = (a << 24) | 0x0F0F0F;
+            }
+            out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+            out.setHasMipMap(true);
+        }
+        synchronized (LOGOS) {
+            LOGOS.put("dark-letters", out);
+        }
+        return out;
+    }
+
     private static Bitmap ownLogoCached(Context c, String key) {
         synchronized (LOGOS) {
             if (LOGOS.containsKey("own:" + key)) return LOGOS.get("own:" + key);
